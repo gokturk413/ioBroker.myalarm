@@ -695,7 +695,7 @@ class Myalarm extends utils.Adapter {
     }
 
     /**
-     * Handle incoming messages from admin
+     * Handle incoming messages from admin nn
      * @param {ioBroker.Message} obj
      */
     onMessage(obj) {
