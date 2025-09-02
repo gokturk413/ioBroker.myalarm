@@ -1,0 +1,116 @@
+{
+    "common": {
+        "name": "myalarm",
+        "version": "0.0.1",
+        "news": {
+            "0.0.1": {
+                "en": "initial release",
+                "de": "Erstveröffentlichung",
+                "ru": "Начальная версия",
+                "pt": "lançamento inicial",
+                "nl": "Eerste uitgave",
+                "fr": "Première version",
+                "it": "Versione iniziale",
+                "es": "Versión inicial",
+                "pl": "Pierwsze wydanie",
+                "uk": "Початкова версія",
+                "zh-cn": "首次出版"
+            }
+        },
+        "titleLang": {
+            "en": "My Alarm",
+            "de": "Mein Alarm",
+            "ru": "Моя тревога",
+            "pt": "Meu alarme",
+            "nl": "Mijn alarm",
+            "fr": "Mon alarme",
+            "it": "Il mio allarme",
+            "es": "Mi alarma",
+            "pl": "Mój alarm",
+            "uk": "Моя тривога",
+            "zh-cn": "我的警报"
+        },
+        "desc": {
+            "en": "My Alarm System",
+            "de": "Mein Alarmsystem",
+            "ru": "Моя система тревоги",
+            "pt": "Meu sistema de alarme",
+            "nl": "Mijn alarmsysteem",
+            "fr": "Mon système d'alarme",
+            "it": "Il mio sistema di allarme",
+            "es": "Mi sistema de alarma",
+            "pl": "Mój system alarmowy",
+            "uk": "Моя сигналізація",
+            "zh-cn": "我的警报系统"
+        },
+        "authors": [
+            "gokturk413 <gokturk413@gmail.com>"
+        ],
+        "keywords": [
+            "alarm",
+            "high",
+            "low"
+        ],
+        "licenseInformation": {
+            "type": "free",
+            "license": "MIT"
+        },
+        "platform": "Javascript/Node.js",
+        "icon": "myalarm.png",
+        "enabled": true,
+        "extIcon": "https://raw.githubusercontent.com/gokturk413/ioBroker.myalarm/main/admin/myalarm.png",
+        "readme": "https://github.com/gokturk413/ioBroker.myalarm/blob/main/README.md",
+        "loglevel": "info",
+        "tier": 3,
+        "mode": "daemon",
+        "type": "alarm",
+        "compact": true,
+        "connectionType": "local",
+        "dataSource": "push",
+        "messagebox": true,
+        "adminUI": {
+            "config": "materialize",
+            "custom": "json"
+        },
+        "supportCustoms": true,
+        "dependencies": [
+            {
+                "js-controller": ">=6.0.11"
+            }
+        ],
+        "globalDependencies": [
+            {
+                "admin": ">=7.0.23"
+            }
+        ]
+    },
+    "native": {
+        "option1": true,
+        "option2": "42",
+        "alarms": []
+    },
+    "objects": [],
+    "instanceObjects": [
+        {
+            "_id": "info",
+            "type": "channel",
+            "common": {
+                "name": "Information"
+            },
+            "native": {}
+        },
+        {
+            "_id": "info.connection",
+            "type": "state",
+            "common": {
+                "role": "indicator.connected",
+                "name": "Device or service connected",
+                "type": "boolean",
+                "read": true,
+                "write": false,
+                "def": false
+            },
+            "native": {}
+        }
+    ]
+}

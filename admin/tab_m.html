@@ -1,0 +1,196 @@
+<html>
+
+<head>
+    <!-- Load ioBroker scripts and styles-->
+    <link rel="stylesheet" type="text/css" href="../../css/adapter.css" />
+    <link rel="stylesheet" type="text/css" href="../../lib/css/materialize.css">
+
+    <script type="text/javascript" src="../../lib/js/jquery-3.2.1.min.js"></script>
+    <script type="text/javascript" src="../../socket.io/socket.io.js"></script>
+    <script type="text/javascript" src="../../js/translate.js"></script>
+    <script type="text/javascript" src="../../lib/js/materialize.js"></script>
+    <script type="text/javascript" src="../../js/adapter-settings.js"></script>
+
+    <!-- Material Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- Load our own files -->
+    <script type="text/javascript" src="words.js"></script>
+    <style>
+        .m .col .select-wrapper + label {
+            top: -26px;
+        }
+        .m span{
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="m adapter-container">
+        <div class="row">
+            <div class="col s12">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title translate">Alarm Configuration</span>
+                        
+                        <!-- Add Alarm Form -->
+                        <div class="row">
+                            <div class="input-field col s12 m6">
+                                <input id="datapoint" type="text" class="validate">
+                                <label for="datapoint">Datapoint</label>
+                            </div>
+                            <div class="input-field col s12 m6">
+                                <select id="alarmType">
+                                    <option value="warning">Warning</option>
+                                    <option value="info">Info</option>
+                                    <option value="alarm">Alarm</option>
+                                </select>
+                                <label>Alarm Type</label>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="input-field col s12 m3">
+                                <input id="highValue" type="number" step="any" class="validate">
+                                <label for="highValue">High Value</label>
+                            </div>
+                            <div class="input-field col s12 m3">
+                                <input id="highHighValue" type="number" step="any" class="validate">
+                                <label for="highHighValue">High-High Value</label>
+                            </div>
+                            <div class="input-field col s12 m3">
+                                <input id="lowValue" type="number" step="any" class="validate">
+                                <label for="lowValue">Low Value</label>
+                            </div>
+                            <div class="input-field col s12 m3">
+                                <input id="lowLowValue" type="number" step="any" class="validate">
+                                <label for="lowLowValue">Low-Low Value</label>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col s12">
+                                <button class="btn waves-effect waves-light" id="addAlarm">
+                                    <i class="material-icons left">add</i> Add Alarm
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Alarms Table -->
+                        <div class="row">
+                            <div class="col s12">
+                                <table class="striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Datapoint</th>
+                                            <th>Type</th>
+                                            <th>High</th>
+                                            <th>High-High</th>
+                                            <th>Low</th>
+                                            <th>Low-Low</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="alarmsTable">
+                                        <!-- Alarm rows will be added here dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize materialize components
+        // Wait for DOM to be fully loaded
+        $(document).ready(function() {
+            // Initialize Materialize select
+            setTimeout(function() {
+                $('select').formSelect();
+                loadAlarms();
+            }, 100);
+
+            // Add alarm button click handler
+            $('#addAlarm').on('click', function() {
+                const alarm = {
+                    datapoint: $('#datapoint').val(),
+                    alarmType: $('#alarmType').val(),
+                    highValue: parseFloat($('#highValue').val()),
+                    highHighValue: parseFloat($('#highHighValue').val()),
+                    lowValue: parseFloat($('#lowValue').val()),
+                    lowLowValue: parseFloat($('#lowLowValue').val())
+                };
+
+                sendTo('myalarm.0', 'addAlarm', alarm, function(result) {
+                    if (result.error) {
+                        M.toast({html: 'Error: ' + result.error, displayLength: 3000});
+                    } else {
+                        M.toast({html: 'Alarm added successfully', displayLength: 3000});
+                        loadAlarms();
+                        // Clear form
+                        $('#datapoint').val('');
+                        $('#alarmType').val('warning');
+                        $('#highValue').val('');
+                        $('#highHighValue').val('');
+                        $('#lowValue').val('');
+                        $('#lowLowValue').val('');
+                        // Reinitialize Materialize components
+                        $('select').formSelect();
+                        Materialize.updateTextFields();
+                    }
+                });
+            });
+        });
+
+        function loadAlarms() {
+            sendTo('myalarm.0', 'getAlarms', {}, function(result) {
+                if (result.error) {
+                    Materialize.toast('Error loading alarms: ' + result.error, 3000);
+                    return;
+                }
+
+                const tbody = $('#alarmsTable');
+                tbody.empty();
+
+                result.alarms.forEach(function(alarm) {
+                    const row = $('<tr>');
+                    row.append($('<td>').text(alarm.datapoint));
+                    row.append($('<td>').text(alarm.alarm_type));
+                    row.append($('<td>').text(alarm.high_value));
+                    row.append($('<td>').text(alarm.high_high_value));
+                    row.append($('<td>').text(alarm.low_value));
+                    row.append($('<td>').text(alarm.low_low_value));
+                    
+                    const deleteBtn = $('<button>')
+                        .addClass('btn-small waves-effect waves-light red')
+                        .html('<i class="material-icons">delete</i>')
+                        .on('click', function() {
+                            deleteAlarm(alarm.id);
+                        });
+                    
+                    row.append($('<td>').append(deleteBtn));
+                    tbody.append(row);
+                });
+            });
+        }
+
+        function deleteAlarm(id) {
+            sendTo('myalarm.0', 'deleteAlarm', { id: id }, function(result) {
+                if (result.error) {
+                    M.toast({html: 'Error: ' + result.error, displayLength: 3000});
+                } else {
+                    M.toast({html: 'Alarm deleted successfully', displayLength: 3000});
+                    loadAlarms();
+                }
+            });
+        }
+    </script>
+
+</body>
+
+</html>

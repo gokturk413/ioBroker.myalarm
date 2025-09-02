@@ -1,0 +1,83 @@
+{
+  "i18n": true,
+  "type": "panel",
+  "items": {
+    "alarms": {
+      "type": "panel",
+      "label": "Alarms",
+      "items": {
+        "alarmType": {
+          "type": "select",
+          "sm": 2,
+          "label": "Type",
+          "options": [
+            { "value": "alarm", "label": "Alarm" },
+            { "value": "warning", "label": "Warning" },
+            { "value": "info", "label": "Info" }
+          ]
+        },
+        "highValue": {
+          "type": "number",
+          "sm": 2,
+          "label": "High Value"
+        },
+        "highHighValue": {
+          "type": "number",
+          "sm": 2,
+          "label": "High-High Value",
+          "validator": "!data.highHighValue || !data.highValue || data.highHighValue > data.highValue",
+          "validatorErrorText": "High-High value must be greater than High value",
+          "validatorNoSaveOnError": true
+        },
+        "lowValue": {
+          "type": "number",
+          "sm": 2,
+          "label": "Low Value"
+        },
+        "lowLowValue": {
+          "type": "number",
+          "sm": 2,
+          "label": "Low-Low Value",
+          "validator": "!data.lowLowValue || !data.lowValue || data.lowValue > data.lowLowValue",
+          "validatorErrorText": "Low value must be greater than Low-Low value",
+          "validatorNoSaveOnError": true
+        },
+        "alarmActive": {
+          "type": "checkbox",
+          "sm": 2,
+          "label": "Active",
+          "default": true
+        },
+        "description": {
+          "type": "text",
+          "sm": 4,
+          "label": "Description"
+        },
+        "highMessage": {
+          "newLine": true,
+          "type": "text",
+          "sm": 4,
+          "label": "High Alert Message"
+        },
+        "highAlarmSound": {
+          "type": "selectSendTo",
+          "sm": 4,
+          "label": "High Alarm Sound",
+          "command": "getSoundsName"
+        },
+        "lowMessage": {
+          "newLine": true,
+          "type": "text",
+          "sm": 4,
+          "label": "Low Alert Message"
+        },
+        "lowAlarmSound": {
+          "type": "selectSendTo",
+          "sm": 4,
+          "label": "Low Alarm Sound",
+          "command": "getSoundsName"
+        }
+      }
+    }
+  }
+}

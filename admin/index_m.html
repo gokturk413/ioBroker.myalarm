@@ -1,0 +1,832 @@
+<html>
+
+<head>
+
+    <!-- Load ioBroker scripts and styles-->
+    <link rel="stylesheet" type="text/css" href="../../css/adapter.css" />
+    <link rel="stylesheet" type="text/css" href="../../lib/css/materialize.css">
+    <link rel="stylesheet" type="text/css" href="../../lib/css/fancytree/ui.fancytree.min.css" />
+
+    <script type="text/javascript" src="../../lib/js/jquery-3.2.1.min.js"></script>
+    <script type="text/javascript" src="../../socket.io/socket.io.js"></script>
+    <script type="text/javascript" src="../../lib/js/selectID.js"></script>
+    <script type="text/javascript" src="../../lib/js/jquery-ui.min.js"></script>
+    <script type="text/javascript" src="../../lib/js/jquery.fancytree-all.min.js"></script>
+
+    <script type="text/javascript" src="../../js/translate.js"></script>
+    <script type="text/javascript" src="../../lib/js/materialize.js"></script>
+    <script type="text/javascript" src="../../js/adapter-settings.js"></script>
+
+    <!-- Load our own files -->
+    <link rel="stylesheet" type="text/css" href="style.css" />
+    <script type="text/javascript" src="words.js"></script>
+
+    <style>
+        .alarm-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            padding: 8px;
+        }
+        .alarm-table td {
+            padding: 8px;
+        }
+        .alarm-table .divider {
+            height: 1px;
+            background-color: #e0e0e0;
+            padding: 0;
+            margin: 10px 0;
+        }
+    </style>
+
+    <script type="text/javascript">
+      
+          let selectId;
+        function initSelectId(callback) {
+            if (selectId) {
+                return callback(selectId);
+            }
+      socket.emit('getObjects', (err, objs) => {
+        selectId = $('#dialog-select-member').selectId('init', {
+                noMultiselect: true,
+          objects: objs,
+          imgPath: '../../lib/css/fancytree/',
+                filter: { type: 'state' },
+          name: 'scenes-select-state',
+                texts: {
+                    select: _('Select'),
+                    cancel: _('Cancel'),
+                    all: _('All'),
+                    id: _('ID'),
+                    name: _('Name'),
+                    role: _('Role'),
+                    room: _('Room'),
+                    value: _('Value'),
+                    selectid: _('Select ID'),
+                    from: _('From'),
+                    lc: _('Last changed'),
+                    ts: _('Time stamp'),
+                    wait: _('Processing...'),
+                    ack: _('Acknowledged'),
+                    selectAll: _('Select all'),
+                    unselectAll: _('Deselect all'),
+                    invertSelection: _('Invert selection')
+                },
+          columns: ['image', 'name', 'role', 'room']
+        });
+            callback(selectId);
+      });
+    }
+    
+  // This will be called by the admin adapter when the settings page loads
+        function load(_settings, _onChange) {
+            if (!_settings) return;
+            
+            settings = _settings;
+            onChange = _onChange;
+
+            // Initialize settings if needed
+          if (!settings.alarms) {
+              settings.alarms = [];
+          } else {
+              // Filter out empty alarms
+              settings.alarms = settings.alarms.filter(alarm => alarm && alarm.datapoint);
+          }
+          if (typeof settings.lastAlarmId !== 'number') {
+              settings.lastAlarmId = 0;
+          }
+
+            // Load existing alarms into table
+                    updateAlarmsTable();
+
+            // Validation is handled by ioBroker JSON config
+
+            // Add validation for low-low value
+            $('#lowLowValue').on('change', function() {
+                var lowLowVal = parseFloat($(this).val());
+                var lowVal = parseFloat($('#lowValue').val());
+
+                console.log('Low-Low Value:', lowLowVal);
+                console.log('Low Value:', lowVal);
+
+                // Only validate if low value is set
+                if (!isNaN(lowVal)) {
+                    if (lowLowVal >= lowVal) {
+                        M.toast({html: 'Low-Low value must be less than Low value', displayLength: 3000});
+                        $(this).val(''); // Clear invalid value
+                    }
+                }
+            });
+
+            // Also validate when low value changes
+            $('#lowValue').on('change', function() {
+                var lowVal = parseFloat($(this).val());
+                var lowLowVal = parseFloat($('#lowLowValue').val());
+
+                console.log('Low Value:', lowVal);
+                console.log('Low-Low Value:', lowLowVal);
+
+                // Only validate if low-low value is set
+                if (!isNaN(lowLowVal)) {
+                    if (lowVal <= lowLowVal) {
+                        M.toast({html: 'Low value must be greater than Low-Low value', displayLength: 3000});
+                        $(this).val(''); // Clear invalid value
+                    }
+                }
+            });
+
+            // Load general settings
+            $('.value').each(function () {
+                var $key = $(this);
+                var id = $key.attr('id');
+                if ($key.attr('type') === 'checkbox') {
+                    // do not call onChange direct, because onChange could expect some arguments
+                    $key.prop('checked', settings[id])
+                        .on('change', () => onChange());
+                } else {
+                    // do not call onChange direct, because onChange could expect some arguments
+                    $key.val(settings[id])
+                        .on('change', () => onChange())
+                        .on('keyup', () => onChange());
+                }
+            });
+
+            // Initialize Materialize selects first
+            M.FormSelect.init(document.querySelectorAll('select'));
+
+            // Add click handler for Add Alarm button
+            // First remove any existing click handlers
+            $('#addAlarm').off('click').on('click', function() {
+                var datapoint = $('#datapoint').val();
+                if (!datapoint) {
+                    M.toast({html: 'Please select a datapoint', displayLength: 3000});
+                    return;
+                }
+
+                // Create new alarm object
+                var newAlarm = {
+                    alarmid: settings.lastAlarmId + 1,
+                    datapoint: datapoint,
+                    description: $('#alarmDescription').val() || '',
+                    active: true,
+                    alarmType: $('#alarmType').val() || 'warning',
+                    highValue: parseFloat($('#highValue').val()) || null,
+                    highHighValue: parseFloat($('#highHighValue').val()) || null,
+                    lowValue: parseFloat($('#lowValue').val()) || null,
+                    lowLowValue: parseFloat($('#lowLowValue').val()) || null,
+                    highMessage: $('#highMessage').val() || '',
+                    highAlarmSound: $('#highAlarmSound').val() || '',
+                    lowMessage: $('#lowMessage').val() || '',
+                    lowAlarmSound: $('#lowAlarmSound').val() || ''
+                };
+
+                // Update the datapoint's custom settings
+                socket.emit('getObject', datapoint, function(err, obj) {
+                    if (!err && obj) {
+                        // Initialize custom section if needed
+                        if (!obj.common) obj.common = {};
+                        if (!obj.common.custom) obj.common.custom = {};
+                        if (!obj.common.custom['myalarm.'+instance]) obj.common.custom['myalarm.'+instance] = {};
+
+                        // Update the custom settings
+                        obj.common.custom['myalarm.'+instance] = {
+                            enabled: newAlarm.active,
+                            alarmType: newAlarm.alarmType,
+                            description: newAlarm.description,
+                            alarmActive: newAlarm.active,
+                            highValue: newAlarm.highValue,
+                            highHighValue: newAlarm.highHighValue,
+                            lowValue: newAlarm.lowValue,
+                            lowLowValue: newAlarm.lowLowValue,
+                            highMessage: newAlarm.highMessage,
+                            highAlarmSound: newAlarm.highAlarmSound,
+                            lowMessage: newAlarm.lowMessage,
+                            lowAlarmSound: newAlarm.lowAlarmSound
+                        };
+
+                        // Save the updated object
+                        socket.emit('setObject', datapoint, obj, function(err) {
+                            if (err) {
+                                console.error('Error saving alarm settings for ' + datapoint + ': ' + err);
+                                M.toast({html: 'Error saving alarm settings', displayLength: 3000});
+                            } else {
+                                // Add alarm to settings
+                                settings.alarms.push(newAlarm);
+                                settings.lastAlarmId = newAlarm.alarmid;
+
+                                // Update table and clear form
+                                updateAlarmsTable();
+                                clearAlarmForm();
+
+                                // Call onChange to activate save buttons
+                                onChange();
+
+                                // Show success message
+                                M.toast({html: 'Alarm added successfully', displayLength: 3000});
+                            }
+                        });
+                    } else {
+                        console.error('Error getting object for ' + datapoint + ': ' + err);
+                        M.toast({html: 'Error getting datapoint object', displayLength: 3000});
+                    }
+                });
+            });
+
+            // Load available sounds
+            sendTo('myalarm.' + instance, 'getSoundsName', {}, function(sounds) {
+                console.log('Received sounds:', sounds);
+                if (Array.isArray(sounds)) {
+                    const $highSound = $('#highAlarmSound');
+                    const $lowSound = $('#lowAlarmSound');
+                    
+                    console.log('Found select elements:', $highSound.length, $lowSound.length);
+                    
+                    // Store current values before emptying
+                    const highCurrentValue = $highSound.val();
+                    const lowCurrentValue = $lowSound.val();
+                    
+                    $highSound.empty();
+                    $lowSound.empty();
+                    
+                    // Add empty option first
+                    $highSound.append(new Option('Select Sound', ''));
+                    $lowSound.append(new Option('Select Sound', ''));
+                    
+                    // Add sound options
+                    sounds.forEach(function(sound) {
+                        console.log('Adding sound:', sound);
+                        // Handle both string and object formats
+                        const label = typeof sound === 'string' ? sound : (sound.label || sound.value || sound);
+                        const value = typeof sound === 'string' ? sound : (sound.value || sound.label || sound);
+                        
+                        $highSound.append(new Option(label, value));
+                        $lowSound.append(new Option(label, value));
+                    });
+                    
+                    // Re-initialize Materialize selects
+                    M.FormSelect.init($highSound[0]);
+                    M.FormSelect.init($lowSound[0]);
+                    
+                    // Restore values if they existed
+                    if (highCurrentValue) {
+                        $highSound.val(highCurrentValue);
+                        M.FormSelect.init($highSound[0]);
+                    }
+                    if (lowCurrentValue) {
+                        $lowSound.val(lowCurrentValue);
+                        M.FormSelect.init($lowSound[0]);
+                    }
+                } else {
+                    console.error('Error loading sounds:', sounds);
+                }
+            });
+
+            // Fetch all objects to find alarm datapoints
+            socket.emit('getObjects', function(err, objects) {
+                if (!err && objects) {
+                    // Initialize alarms array
+                    settings.alarms = [];
+                    
+                    // Find all objects that have myalarm configurations
+                    var alarmPoints = Object.keys(objects).filter(function(key) {
+                        var obj = objects[key];
+                        return obj && 
+                               obj.common && 
+                               obj.common.custom && 
+                               obj.common.custom['myalarm.'+instance] && 
+                               obj.common.custom['myalarm.'+instance].enabled;
+                    });
+
+                    // Counter for loaded datapoints
+                    var loadedCount = 0;
+
+                    // Process each alarm datapoint
+                    alarmPoints.forEach(function(alarmPoint) {
+                        socket.emit('getObject', alarmPoint, function(err, obj) {
+                            if (!err && obj && obj.common && obj.common.custom && obj.common.custom['myalarm.'+instance]) {
+                                var alarmConfig = obj.common.custom['myalarm.'+instance];
+                                if (alarmConfig.enabled) {
+                                    settings.alarms.push({
+                                        alarmid: alarmPoint,
+                                        source: alarmPoint,
+                                        datapoint: alarmPoint,
+                                        description: alarmConfig.description || obj.common.name || '',
+                                        active: alarmConfig.alarmActive || false,
+                                        alarmType: alarmConfig.alarmType || 'warning',
+                                        highValue: alarmConfig.highValue,
+                                        highHighValue: alarmConfig.highHighValue,
+                                        lowValue: alarmConfig.lowValue,
+                                        lowLowValue: alarmConfig.lowLowValue,
+                                        highMessage: alarmConfig.highMessage || '',
+                                        highAlarmSound: alarmConfig.highAlarmSound || '',
+                                        lowMessage: alarmConfig.lowMessage || '',
+                                        lowAlarmSound: alarmConfig.lowAlarmSound || ''
+                                    });
+                                }
+                            }
+                            
+                            loadedCount++;
+                            if (loadedCount === alarmPoints.length) {
+                                updateAlarmsTable();
+                            }
+                        });
+                    });
+                }
+            });
+
+            // Initialize all modals and selectID dialog
+            setTimeout(function() {
+                // Initialize modals
+                $('.modal').modal();
+                
+                // Initialize tabs
+                var tabsElem = document.querySelector('.tabs');
+                M.Tabs.init(tabsElem);
+                
+                // Initialize selectID dialog
+                /*initSelectId(function(sid) {
+                    if (!sid) return;
+                    
+                    $('#selectDatapoint').off('click').on('click', function() {
+                        sid.show(function(newId) {
+                            if (newId) {
+                                $('#datapoint').val(newId).trigger('change');
+                                onChange();
+                            }
+                        });
+                    });
+                });*/
+
+    $('#selectDatapoint').on('click', () => {
+        initSelectId((sid) => {
+          sid.selectId('show', (newId) => {
+                            if (newId) {
+                                $('#datapoint').val(newId).trigger('change');
+                                onChange();
+                            }
+                        });
+                    });
+                });
+
+                // Initialize Add Alarm button
+                /*$('#addAlarm').off('click').on('click', function() {
+                    var datapoint = $('#datapoint').val();
+                    if (!datapoint) {
+                        M.toast({html: 'Please select a datapoint', displayLength: 3000});
+                        return;
+                    }
+
+                    // Ensure settings.alarms exists
+                    if (!settings.alarms) settings.alarms = [];
+
+                    var alarm = {
+                        alarmid: settings.lastAlarmId + 1,
+                        datapoint: datapoint,
+                        description: $('#alarmDescription').val() || '',
+                        alarmType: $('#alarmType').val() || 'warning',
+                        active: $('#alarmActive').prop('checked'),
+                        highAlarmSound: $('#highAlarmSound').val() || 'none',
+                        lowAlarmSound: $('#lowAlarmSound').val() || 'none',
+                        highValue: $('#highValue').val() || '',
+                        highHighValue: $('#highHighValue').val() || '',
+                        lowValue: $('#lowValue').val() || '',
+                        lowLowValue: $('#lowLowValue').val() || '',
+                        highMessage: $('#highMessage').val() || '',
+                        lowMessage: $('#lowMessage').val() || ''
+                    };
+
+                    // Add alarm to settings
+                    settings.alarms.push(alarm);
+                    settings.lastAlarmId = alarm.alarmid;
+                    onChange();
+                    updateAlarmsTable();
+                    clearAlarmForm();
+                    M.toast({html: 'Alarm added successfully', displayLength: 3000});
+                });*/
+                
+                // Initialize Materialize select
+                var selectElems = document.querySelectorAll('select');
+                M.FormSelect.init(selectElems);
+                updateAlarmsTable();
+            }, 100);
+            
+            // Load general settings
+            $('.value').each(function () {
+                var $key = $(this);
+                var id = $key.attr('id');
+                if ($key.attr('type') === 'checkbox') {
+                    // do not call onChange direct, because onChange could expect some arguments
+                    $key.prop('checked', settings[id])
+                        .on('change', () => onChange());
+                } else {
+                    // do not call onChange direct, because onChange could expect some arguments
+                    $key.val(settings[id])
+                        .on('change', () => onChange())
+                        .on('keyup', () => onChange())
+                }
+            }, 100);
+            onChange(false);
+            // reinitialize all the Materialize labels on the page if you are dynamically adding inputs:
+            if (M) M.updateTextFields();
+        }
+
+        // This will be called by the admin adapter when the user presses the save button
+        function save(callback) {
+            // Save general settings and table data
+            var obj = {};
+            
+            // Save form values
+            $('.value').each(function () {
+                var $this = $(this);
+                if ($this.attr('type') === 'checkbox') {
+                    obj[$this.attr('id')] = $this.prop('checked');
+                } else if ($this.attr('type') === 'number') {
+                    obj[$this.attr('id')] = parseFloat($this.val());
+                } else {
+                    obj[$this.attr('id')] = $this.val();
+                }
+            });
+
+            // Save table data
+            obj.alarms = [];
+            $('#alarmsTable tr').each(function() {
+                if (!$(this).hasClass('grey')) { // Skip header row
+                    var $cells = $(this).find('td');
+                    if ($cells.length > 0) {
+                        var datapoint = $cells.eq(1).text();
+                        // Only save alarms that have a valid datapoint
+                        if (datapoint && datapoint !== '-') {
+                            var alarm = {
+                                alarmid: parseInt($cells.eq(0).text()) || 0,
+                                datapoint: $cells.eq(0).text(),
+                                description: $cells.eq(1).text(),
+                                active: $cells.eq(2).find('i').hasClass('green-text'),
+                                alarmType: $cells.eq(3).text() || 'warning',
+                                highValue: $cells.eq(4).text() === '-' ? null : parseFloat($cells.eq(4).text()),
+                                highHighValue: $cells.eq(5).text() === '-' ? null : parseFloat($cells.eq(5).text()),
+                                lowValue: $cells.eq(6).text() === '-' ? null : parseFloat($cells.eq(6).text()),
+                                lowLowValue: $cells.eq(7).text() === '-' ? null : parseFloat($cells.eq(7).text()),
+                                highMessage: $cells.eq(8).text(),
+                                highAlarmSound: $cells.eq(9).text(),
+                                lowMessage: $cells.eq(10).text(),
+                                lowAlarmSound: $cells.eq(11).text()
+                            };
+                            obj.alarms.push(alarm);
+                        }
+                    }
+                }
+            });
+            
+            // Calculate lastAlarmId and save to both obj and settings
+            obj.lastAlarmId = Math.max(...obj.alarms.map(a => a.alarmid), 0);
+            settings.alarms = obj.alarms;
+            settings.lastAlarmId = obj.lastAlarmId;
+
+            // Save alarms back to their respective datapoints
+            /*if (settings && Array.isArray(settings.alarms)) {
+                var savedCount = 0;
+                var totalAlarms = settings.alarms.length;
+
+                if (totalAlarms === 0) {
+                    callback(obj);
+                    return;
+                }
+
+                settings.alarms.forEach(function(alarm) {
+                    socket.emit('getObject', alarm.datapoint, function(err, obj) {
+                        if (!err && obj) {
+                            // Initialize custom section if needed
+                            if (!obj.common) obj.common = {};
+                            if (!obj.common.custom) obj.common.custom = {};
+                            if (!obj.common.custom['myalarm.'+instance]) obj.common.custom['myalarm.'+instance] = {};
+
+                            // Update the custom settings
+                            obj.common.custom['myalarm.'+instance] = {
+                                enabled: alarm.active,
+                                alarmType: alarm.alarmType,
+                                highValue: alarm.highValue,
+                                highHighValue: alarm.highHighValue,
+                                lowValue: alarm.lowValue,
+                                lowLowValue: alarm.lowLowValue,
+                                highMessage: alarm.highMessage,
+                                highAlarmSound: alarm.highAlarmSound,
+                                lowMessage: alarm.lowMessage,
+                                lowAlarmSound: alarm.lowAlarmSound
+                            };
+
+                            socket.emit('setObject', alarm.datapoint, obj, function(err) {
+                                savedCount++;
+                                if (err) {
+                                    console.error('Error saving alarm settings for ' + alarm.datapoint + ': ' + err);
+                                }
+                                if (savedCount === totalAlarms) {
+                                    callback(obj);
+                                }
+                            });
+                        } else {
+                            savedCount++;
+                            console.error('Error getting object for ' + alarm.datapoint + ': ' + err);
+                            if (savedCount === totalAlarms) {
+                                callback(obj);
+                            }
+                        }
+                    });
+                });
+            } else {
+                callback(obj);
+            }*/
+            callback(obj);
+        }
+
+        function deleteAlarm(datapoint) {
+    // Remove the alarm from settings
+    settings.alarms = settings.alarms.filter(alarm => alarm.datapoint !== datapoint);
+
+    // Remove custom settings from the datapoint
+    socket.emit('getObject', datapoint, function(err, obj) {
+                    if (!err && obj) {
+                        if (obj.common && obj.common.custom && obj.common.custom['myalarm.'+instance]) {
+                            // First set enabled to false
+                            obj.common.custom['myalarm.'+instance].enabled = false;
+
+                        // Save the updated object
+                        socket.emit('extendObject', datapoint, obj, function(err) {
+                            if (err) {
+                                console.error('Error removing alarm settings for ' + datapoint + ': ' + err);
+                                M.toast({html: 'Error removing alarm settings', displayLength: 3000});
+                            } else {
+                                onChange(settings);
+                                updateAlarmsTable();
+                                M.toast({html: 'Alarm deleted successfully', displayLength: 3000});
+                            }
+                        });
+                    } else {
+                        // No custom settings to remove, just update UI
+                        onChange(settings);
+                        updateAlarmsTable();
+                        M.toast({html: 'Alarm deleted successfully', displayLength: 3000});
+                    }
+                } else {
+                    console.error('Error getting object for ' + datapoint + ': ' + err);
+                    // Still remove from UI even if we can't update the object
+                    onChange(settings);
+                    updateAlarmsTable();
+                    M.toast({html: 'Alarm deleted with warnings', displayLength: 3000});
+                }
+            });
+        }
+
+        function updateAlarmsTable() {
+            var $table = $('#alarmsTable');
+            $table.empty();
+
+            // Create header row once
+            var $headerRow = $('<tr class="grey lighten-4">');
+            $headerRow.append($('<th>').text('Datapoint'));
+            $headerRow.append($('<th>').text('Description'));
+            $headerRow.append($('<th>').text('Active'));
+            $headerRow.append($('<th>').text('Type'));
+            $headerRow.append($('<th>').text('High'));
+            $headerRow.append($('<th>').text('High-High'));
+            $headerRow.append($('<th>').text('Low'));
+            $headerRow.append($('<th>').text('Low-Low'));
+            $headerRow.append($('<th>').text('High Message'));
+            $headerRow.append($('<th>').text('High Sound'));
+            $headerRow.append($('<th>').text('Low Message'));
+            $headerRow.append($('<th>').text('Low Sound'));
+            $headerRow.append($('<th>').text('Actions'));
+            $table.append($headerRow);
+
+            if (settings && Array.isArray(settings.alarms)) {
+                settings.alarms.forEach(function(alarm) {
+                    var $valueRow = $('<tr>');
+                    $valueRow.append($('<td>').text(alarm.datapoint || '-'));
+                    $valueRow.append($('<td>').text(alarm.description || '-'));
+                    
+                    // Active status with icon
+                    var $activeCell = $('<td>');
+                    var $activeIcon = $('<i>').addClass('material-icons');
+                    if (alarm.active) {
+                        $activeIcon.addClass('green-text').text('check_box');
+                    } else {
+                        $activeIcon.addClass('grey-text').text('check_box_outline_blank');
+                    }
+                    $activeCell.append($activeIcon);
+                    $valueRow.append($activeCell);
+
+                    $valueRow.append($('<td>').text(alarm.alarmType || '-'));
+                    $valueRow.append($('<td>').text(alarm.highValue !== undefined && alarm.highValue !== '' ? alarm.highValue : '-'));
+                    $valueRow.append($('<td>').text(alarm.highHighValue !== undefined && alarm.highHighValue !== '' ? alarm.highHighValue : '-'));
+                    $valueRow.append($('<td>').text(alarm.lowValue !== undefined && alarm.lowValue !== '' ? alarm.lowValue : '-'));
+                    $valueRow.append($('<td>').text(alarm.lowLowValue !== undefined && alarm.lowLowValue !== '' ? alarm.lowLowValue : '-'));
+                    $valueRow.append($('<td>').text(alarm.highMessage || '-'));
+                    $valueRow.append($('<td>').text(alarm.highAlarmSound || '-'));
+                    $valueRow.append($('<td>').text(alarm.lowMessage || '-'));
+                    $valueRow.append($('<td>').text(alarm.lowAlarmSound || '-'));
+
+                    // Add delete button
+                    var $deleteBtn = $('<a>')
+                        .addClass('btn-floating waves-effect waves-light red')
+                        .attr('data-datapoint', alarm.datapoint)
+                        .click(function() {
+                            deleteAlarm(alarm.datapoint);
+                        });
+                    $deleteBtn.append($('<i>').addClass('material-icons').text('delete'));
+                    
+                    $valueRow.append($('<td>').append($deleteBtn));
+                    $table.append($valueRow);
+
+                    // Add a divider after each row
+                    $table.append($('<tr>').append($('<td colspan="13">').addClass('divider')));
+                });
+            }
+        }
+
+        function clearAlarmForm() {
+            $('#datapoint').val('');
+            $('#alarmDescription').val('');
+            $('#alarmType').val('warning');
+            $('#alarmActive').prop('checked', true);
+            $('#highAlarmSound').val('');
+            $('#lowAlarmSound').val('');
+    $('#alarmType').val('warning');
+    $('#alarmActive').prop('checked', true);
+    $('#highAlarmSound').val('');
+    $('#lowAlarmSound').val('');
+            $('#highValue').val('');
+            $('#highHighValue').val('');
+            $('#lowValue').val('');
+            $('#lowLowValue').val('');
+            $('#highMessage').val('');
+            $('#lowMessage').val('');
+            
+            // Reinitialize select
+            var selectElems = document.querySelectorAll('select');
+            M.FormSelect.init(selectElems);
+        }
+    </script>
+
+</head>
+
+<body>
+
+    <div class="m adapter-container">
+
+        <div class="row">
+            <div class="col s12 m4 l2">
+                <img src="myalarm.png" class="logo">
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="row">
+            <div class="col s12">
+                <ul class="tabs">
+                    <li class="tab col s3"><a href="#settings" class="translate active">Settings</a></li>
+                    <li class="tab col s3"><a href="#alarms" class="translate">Alarms</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Settings Tab Content -->
+        <div id="settings" class="row">
+            <div class="col s12">
+                <div class="row">
+                    <div class="col s6 input-field">
+                        <input type="checkbox" class="value" id="option1" />
+                        <label for="option1" class="translate">option1</label>
+                    </div>
+
+                    <div class="col s6 input-field">
+                        <input type="text" class="value" id="option2" />
+                        <label for="option2" class="translate">option2</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alarms Tab Content -->
+        <div id="alarms" class="row">
+            <div class="col s12">
+                <div class="card">
+                    <div class="card-content">
+                                <span class="card-title translate">Alarm Configuration</span>
+                                
+                                <!-- Add Alarm Form -->
+                                <div class="row">
+                                    <div class="input-field col s12 m2">
+                                        <div class="input-group">
+                                            <input id="datapoint" type="text" class="value" />
+                                            <label for="datapoint" class="translate">Datapoint</label>
+                                            <a id="selectDatapoint" class="btn-floating waves-effect waves-light blue">
+                                                <i class="material-icons">list</i>
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <div class="input-field col s12 m2">
+                                        <select id="alarmType">
+                                            <option value="warning">Warning</option>
+                                            <option value="info">Info</option>
+                                            <option value="alarm">Alarm</option>
+                                        </select>
+                                        <label>Alarm Type</label>
+                                    </div>
+                                    <div class="input-field col s12 m1">
+                                        <input id="highValue" type="number" step="any" class="validate" />
+                                        <label for="highValue">High Value</label>
+                                    </div>
+                                    <div class="input-field col s12 m1">
+                                        <input id="highHighValue" type="number" step="any" class="validate" />
+                                        <label for="highHighValue">High-High Value</label>
+                                    </div>
+                                    <div class="input-field col s12 m1">
+                                        <input id="lowValue" type="number" step="any" class="validate" />
+                                        <label for="lowValue">Low Value</label>
+                                    </div>
+                                    <div class="input-field col s12 m1">
+                                        <input id="lowLowValue" type="number" step="any" class="validate" />
+                                        <label for="lowLowValue">Low-Low Value</label>
+                                    </div>
+                                    <div class="input-field col s12 m1">
+                                        <label>
+                                            <input type="checkbox" id="alarmActive" class="filled-in" checked="checked" />
+                                            <span>Active</span>
+                                        </label>
+                                    </div>
+                                    <div class="input-field col s12 m2">
+                                        <input id="alarmDescription" type="text" class="validate" />
+                                        <label for="alarmDescription">Description</label>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="input-field col s12 m2">
+                                        <input id="highMessage" type="text" class="validate" />
+                                        <label for="highMessage">High Alert Message</label>
+                                    </div>
+                                    <div class="input-field col s12 m2">
+                                        <select id="highAlarmSound">
+                                            <option value="">Select Sound</option>
+                                        </select>
+                                        <label>High Alarm Sound</label>
+                                    </div>
+                                    <div class="input-field col s12 m2">
+                                        <input id="lowMessage" type="text" class="validate" />
+                                        <label for="lowMessage">Low Alert Message</label>
+                                    </div>
+                                    <div class="input-field col s12 m2">
+                                        <select id="lowAlarmSound">
+                                            <option value="">Select Sound</option>
+                                        </select>
+                                        <label>Low Alarm Sound</label>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col s12">
+                                        <button id="addAlarm" class="btn waves-effect waves-light">
+                                            <i class="material-icons left">add</i>Add Alarm
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Alarms Table -->
+                                <div class="row">
+                                    <div class="col s12">
+                                        <table class="alarm-table striped">
+                                            <tbody id="alarmsTable">
+                                                <!-- Alarm rows will be added here dynamically -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dialog for selecting states -->
+        <div class="m material-dialogs">
+            <div id="dialog-select-member" class="modal modal-fixed-footer">
+              <div class="modal-content">
+                <div class="row">
+                  <div class="col s12 title"></div>
+                </div>
+                <div class="row">
+                  <div class="col s12 dialog-content"></div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <a class="modal-action modal-close waves-effect waves-green btn btn-set"><i
+                    class="large material-icons left">check</i><span class="translate">Select</span></a>
+                <a class="modal-action modal-close waves-effect waves-green btn btn-close"><i
+                    class="large material-icons left ">close</i><span class="translate">Cancel</span></a>
+              </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>
