@@ -656,6 +656,7 @@ class Myalarm extends utils.Adapter {
         if(id=='myalarm.'+this.instance+'.info.AcknowledgeId') {
             if (state && state.val !== null && state.val !== undefined) {
                 this.dbUpdateLogAlarmAck(state.val);
+                this.setState('info.IsAlarm', false, true);
             }
         }
         if (state && !state.ack) {
